@@ -259,8 +259,12 @@ const app = {
                 profileRes.json(), insightsRes.json(), reviewsRes.json(), verifRes.json()
             ]);
 
-            if (pd.success) { this.state.profile  = pd.profile;   this.renderProfile();  }
-            if (vd.success) { this.state.verification = vd.data; this.renderProfile();  }
+            if (pd.success) { this.state.profile  = pd.profile; }
+            if (vd.success) { this.state.verification = vd.data; }
+            
+            // Render profile once both (or either) are loaded
+            if (pd.success || vd.success) { this.renderProfile(); }
+
             if (id.success) { this.state.insights = id.insights;  this.renderChart();    }
             if (rd.success) {
                 this.state.reviews = rd.reviews;
@@ -271,6 +275,7 @@ const app = {
                 this.renderKPIs();
             }
         } catch (err) {
+            console.error('[Synapse] Dashboard load failed:', err);
             this.toast('Could not connect to server.', 'error');
             this.renderKPIs();
         }
@@ -283,7 +288,7 @@ const app = {
 
         // Verification Badge
         const v = this.state.verification;
-        const isVerified = v?.verifications?.some(ver => ver.state === 'COMPLETED');
+        const isVerified = v?.verifications && Array.isArray(v.verifications) && v.verifications.some(ver => ver.state === 'COMPLETED');
         const verifBadge = isVerified 
             ? '<span class="verif-badge verified"><i data-lucide="check-circle"></i> Verified</span>'
             : '<span class="verif-badge unverified"><i data-lucide="alert-circle"></i> Unverified</span>';
@@ -1794,13 +1799,13 @@ const app = {
             }
         } catch (err) {
             this.toast('Connection error.', 'error');
-        } catch (err) {
+        } finally {
             if (btn) {
                 btn.disabled = false;
                 btn.innerHTML = 'Add Period';
             }
         }
-        },
+    },
 
     // ── Service Areas ─────────────────────────────────────
     async fetchServiceAreas() {
