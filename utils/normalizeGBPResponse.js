@@ -145,16 +145,20 @@ const normalizeProfile = (data) => {
 };
 
 const normalizeAttributes = (data) => {
-  if (!data || !Array.isArray(data.attributes)) {
+  if (!data) return { success: false, attributes: [] };
+
+  const attrs = Array.isArray(data) ? data : (data.attributes || []);
+
+  if (attrs.length === 0) {
     return {
-      success: false,
+      success: true,
       attributes: []
     };
   }
 
   return {
     success: true,
-    attributes: data.attributes
+    attributes: attrs
   };
 };
 

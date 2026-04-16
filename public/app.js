@@ -1524,7 +1524,7 @@ const app = {
     renderAmenities() {
         const grid = $('amenities-grid');
         const count = $('amenities-count');
-        const attrs = this.state.amenities;
+        const attrs = this.state.amenities || [];
         if (count) count.innerHTML = `<strong>${attrs.length}</strong> attribute${attrs.length !== 1 ? 's' : ''}`;
 
         if (!attrs.length) {
@@ -1533,10 +1533,11 @@ const app = {
         }
 
         grid.innerHTML = attrs.map(a => {
+            const vals = a.values || [];
             let valStr = 'Unknown';
-            if (a.valueType === 'BOOL') valStr = a.values[0] ? 'Yes' : 'No';
-            if (a.valueType === 'ENUM') valStr = a.values[0];
-            if (a.valueType === 'MULTIPLE_ENUM') valStr = a.values.join(', ');
+            if (a.valueType === 'BOOL') valStr = vals[0] === true ? 'Yes' : 'No';
+            if (a.valueType === 'ENUM') valStr = vals[0] || 'Unknown';
+            if (a.valueType === 'MULTIPLE_ENUM') valStr = vals.length ? vals.join(', ') : 'None';
 
             return `
             <div class="card amenity-card">
@@ -1561,9 +1562,10 @@ const app = {
 
         $('modal-title').textContent = `Edit ${attr.displayName || attr.attributeId}`;
         let inputHTML = '';
+        const vals = attr.values || [];
 
         if (attr.valueType === 'BOOL') {
-            const isTrue = attr.values[0] === true;
+            const isTrue = vals[0] === true;
             inputHTML = `
                 <div class="form-group">
                     <label class="form-label">Value</label>
@@ -1577,7 +1579,7 @@ const app = {
             inputHTML = `
                 <div class="form-group">
                     <label class="form-label">Value (comma separated if multiple)</label>
-                    <input type="text" class="form-control" id="edit-attr-val" value="${this.esc(attr.values.join(', '))}">
+                    <input type="text" class="form-control" id="edit-attr-val" value="${this.esc(vals.join(', '))}">
                 </div>
             `;
         }
@@ -1601,8 +1603,10 @@ const app = {
 
         if (attr.valueType === 'BOOL') {
             values = [rawVal === 'true'];
-        } else {
+        } else if (attr.valueType === 'MULTIPLE_ENUM') {
             values = rawVal.split(',').map(s => s.trim()).filter(Boolean);
+        } else {
+            values = [rawVal.trim()];
         }
 
         const btn = $('save-attr-btn');
@@ -1615,11 +1619,8 @@ const app = {
                 headers: this.apiHeaders({ 'Content-Type': 'application/json' }),
                 body: JSON.stringify({
                     attributeData: {
-                        attributes: [{
-                            attributeId: attrId,
-                            valueType: attr.valueType,
-                            values: values
-                        }]
+                        ...attr,
+                        values
                     }
                 })
             });

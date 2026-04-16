@@ -169,7 +169,7 @@ const getProfile = async () => {
 
         if (!locationId) throw new Error('GBP_LOCATION_ID is not set.');
 
-        const url = `https://mybusinessbusinessinformation.googleapis.com/v1/locations/${locationId}?readMask=name,title,storefrontAddress,websiteUri,regularHours,specialHours,serviceArea,phoneNumbers,categories,metadata,latlng,description`;
+        const url = `https://mybusinessbusinessinformation.googleapis.com/v1/locations/${locationId}?readMask=name,title,storefrontAddress,websiteUri,regularHours,specialHours,serviceArea.places,serviceArea.businessType,phoneNumbers,categories,metadata,latlng,description`;
 
         const response = await axios.get(url, {
             ...axiosConfig,
@@ -293,18 +293,21 @@ const getAttributes = async () => {
 
 /**
  * Updates the attributes for the location.
+ * attributeData should be the single attribute object with "name", "attributeId", and values.
  */
-const updateAttributes = async (attributeData) => {
+const updateAttributes = async (attribute) => {
     try {
         await throttle();
         const accessToken = await getFreshAccessToken();
-        const locationId = (process.env.GBP_LOCATION_ID || '').replace('locations/', '');
+        
+        if (!attribute || !attribute.name || !attribute.attributeId) {
+            throw new Error('Invalid attribute data: name and attributeId are required.');
+        }
 
-        if (!locationId) throw new Error('GBP_LOCATION_ID is not set.');
+        // attribute.name is e.g. "locations/{id}/attributes/{attrId}"
+        const url = `https://mybusinessbusinessinformation.googleapis.com/v1/${attribute.name}?attributeMask=${attribute.attributeId}`;
 
-        const url = `https://mybusinessbusinessinformation.googleapis.com/v1/locations/${locationId}/attributes`;
-
-        const response = await axios.patch(url, attributeData, {
+        const response = await axios.patch(url, attribute, {
             ...axiosConfig,
             headers: {
                 Authorization: `Bearer ${accessToken}`,
