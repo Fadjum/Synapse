@@ -169,7 +169,7 @@ const getProfile = async () => {
 
         if (!locationId) throw new Error('GBP_LOCATION_ID is not set.');
 
-        const url = `https://mybusinessbusinessinformation.googleapis.com/v1/locations/${locationId}?readMask=name,title,storefrontAddress,websiteUri,regularHours,phoneNumbers,categories,metadata,latlng,description`;
+        const url = `https://mybusinessbusinessinformation.googleapis.com/v1/locations/${locationId}?readMask=name,title,storefrontAddress,websiteUri,regularHours,specialHours,serviceArea,phoneNumbers,categories,metadata,latlng,description`;
 
         const response = await axios.get(url, {
             ...axiosConfig,
@@ -288,6 +288,35 @@ const getAttributes = async () => {
     } catch (error) {
         console.error('Failed to fetch attributes:', error.message);
         return extractGBPError(error, 'GET_ATTRIBUTES');
+    }
+};
+
+/**
+ * Updates the attributes for the location.
+ */
+const updateAttributes = async (attributeData) => {
+    try {
+        await throttle();
+        const accessToken = await getFreshAccessToken();
+        const locationId = (process.env.GBP_LOCATION_ID || '').replace('locations/', '');
+
+        if (!locationId) throw new Error('GBP_LOCATION_ID is not set.');
+
+        const url = `https://mybusinessbusinessinformation.googleapis.com/v1/locations/${locationId}/attributes`;
+
+        const response = await axios.patch(url, attributeData, {
+            ...axiosConfig,
+            headers: {
+                Authorization: `Bearer ${accessToken}`,
+                'Content-Type': 'application/json'
+            },
+            timeout: 10000
+        });
+
+        return response.data;
+    } catch (error) {
+        console.error('Failed to update attributes:', error.message);
+        return extractGBPError(error, 'UPDATE_ATTRIBUTES');
     }
 };
 
@@ -606,6 +635,7 @@ module.exports = {
     getVerificationStatus,
     getAttributes,
     updateProfile,
+    updateAttributes,
     createPost,
     deletePost,
     fetchQuestions,

@@ -136,9 +136,25 @@ const normalizeProfile = (data) => {
         additional: data.categories.additionalCategories ? data.categories.additionalCategories.map(c => c.displayName) : []
       } : {},
       hours: data.regularHours || {},
+      specialHours: data.specialHours || {},
+      serviceArea: data.serviceArea || {},
       metadata: data.metadata || {},
       latlng: data.latlng || {}
     }
+  };
+};
+
+const normalizeAttributes = (data) => {
+  if (!data || !Array.isArray(data.attributes)) {
+    return {
+      success: false,
+      attributes: []
+    };
+  }
+
+  return {
+    success: true,
+    attributes: data.attributes
   };
 };
 
@@ -237,6 +253,7 @@ module.exports = {
   normalizeMedia, 
   normalizeServices,
   normalizeProfile,
+  normalizeAttributes,
   normalizeInsights,
   normalizePosts
 };

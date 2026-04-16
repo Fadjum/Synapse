@@ -58,6 +58,18 @@
                     <i data-lucide="image"></i>
                     <span>Media</span>
                 </a>
+                <a href="#" class="nav-item" data-view="amenities">
+                    <i data-lucide="info"></i>
+                    <span>Amenities</span>
+                </a>
+                <a href="#" class="nav-item" data-view="special-hours">
+                    <i data-lucide="calendar-days"></i>
+                    <span>Special Hours</span>
+                </a>
+                <a href="#" class="nav-item" data-view="service-areas">
+                    <i data-lucide="map"></i>
+                    <span>Service Areas</span>
+                </a>
             </nav>
 
             <div class="sidebar-bottom">
@@ -255,6 +267,48 @@
                         </div>
                     </div>
                     <div class="media-grid" id="media-grid"></div>
+                </section>
+
+                <!-- ── AMENITIES ── -->
+                <section class="view" id="view-amenities">
+                    <div class="view-toolbar">
+                        <div class="toolbar-left">
+                            <span class="results-count" id="amenities-count">Loading...</span>
+                        </div>
+                    </div>
+                    <div class="attributes-grid" id="amenities-grid"></div>
+                </section>
+
+                <!-- ── SPECIAL HOURS ── -->
+                <section class="view" id="view-special-hours">
+                    <div class="view-toolbar">
+                        <div class="toolbar-left">
+                            <span class="results-count" id="special-hours-count">Loading...</span>
+                        </div>
+                        <div class="toolbar-right">
+                            <button class="btn btn-primary" id="add-special-hour-btn">
+                                <i data-lucide="plus"></i>
+                                Add Special Hour
+                            </button>
+                        </div>
+                    </div>
+                    <div class="special-hours-list" id="special-hours-list"></div>
+                </section>
+
+                <!-- ── SERVICE AREAS ── -->
+                <section class="view" id="view-service-areas">
+                    <div class="view-toolbar">
+                        <div class="toolbar-left">
+                            <span class="results-count" id="service-areas-count">Loading...</span>
+                        </div>
+                        <div class="toolbar-right">
+                            <button class="btn btn-primary" id="add-service-area-btn">
+                                <i data-lucide="plus"></i>
+                                Add Area
+                            </button>
+                        </div>
+                    </div>
+                    <div class="service-areas-list" id="service-areas-list"></div>
                 </section>
 
             </main>

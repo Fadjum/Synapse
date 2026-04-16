@@ -1149,3 +1149,99 @@ select.form-control { cursor: pointer; }
     /* Modal full width */
     .modal { max-width: 100%; margin: 0 16px; }
 }
+
+/* ── Verification Badge ── */
+.verif-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+}
+.verif-badge.verified {
+    background: #e6f7ed;
+    color: #1a8754;
+}
+.verif-badge.unverified {
+    background: #fff4e5;
+    color: #b95000;
+}
+.verif-icon-mini {
+    width: 14px !important;
+    height: 14px !important;
+    color: #1a8754;
+    margin-left: 4px;
+}
+
+/* ── Amenities View ── */
+.attributes-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 20px;
+}
+.amenity-card {
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+.amenity-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 12px;
+}
+.amenity-label {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-muted);
+}
+.amenity-value {
+    font-size: 18px;
+    font-weight: 700;
+}
+.amenity-value.val-yes { color: #1a8754; }
+.amenity-value.val-no { color: #d63301; }
+
+/* ── Special Hours & Service Areas ── */
+.special-hours-list, .service-areas-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-width: 600px;
+}
+.special-hour-card, .service-area-card {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+}
+.sh-info, .sa-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.sh-date {
+    font-weight: 700;
+    font-size: 15px;
+}
+.sh-status {
+    font-size: 14px;
+}
+.sh-status.sh-closed { color: #d63301; font-weight: 600; }
+.sh-status.sh-open { color: #1a8754; font-weight: 600; }
+
+.sa-info {
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+}
+.sa-icon {
+    color: var(--primary);
+}
+.sa-name {
+    font-weight: 600;
+    font-size: 15px;
+}

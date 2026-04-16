@@ -11,6 +11,9 @@ const VIEW_META = {
     qa:        { title: 'Q & A',       subtitle: 'Customer questions and answers' },
     services:  { title: 'Services',    subtitle: 'Medical services offered at Eritage ENT Care' },
     media:     { title: 'Media',       subtitle: 'Photos and videos on your listing' },
+    amenities: { title: 'Amenities',   subtitle: 'Business attributes and amenities' },
+    'special-hours': { title: 'Special Hours', subtitle: 'Holiday and seasonal business hours' },
+    'service-areas': { title: 'Service Areas', subtitle: 'Geographic areas served by this business' },
 };
 
 const STAR_MAP = { FIVE: 5, FOUR: 4, THREE: 3, TWO: 2, ONE: 1 };
@@ -48,8 +51,10 @@ const app = {
         services: [],
         media:    [],
         qa:       [],
+        amenities: [],
+        verification: null,
         reviewFilter: 'all',
-        dataLoaded: { reviews: false, posts: false, services: false, media: false, qa: false },
+        dataLoaded: { reviews: false, posts: false, services: false, media: false, qa: false, amenities: false },
         nextPageTokens: {
             reviews: null,
             posts: null,
@@ -154,7 +159,7 @@ const app = {
 
         // Sync button
         $('refresh-btn').addEventListener('click', () => {
-            this.state.dataLoaded = { reviews: false, posts: false, services: false, media: false, qa: false };
+            this.state.dataLoaded = { reviews: false, posts: false, services: false, media: false, qa: false, amenities: false };
             this.loadDashboard(true);
             if (this.state.currentView !== 'dashboard') this.loadView(this.state.currentView, true);
             this.toast('Syncing with Google…', 'info');
@@ -218,6 +223,9 @@ const app = {
                 case 'services': this.renderServices(); break;
                 case 'media':    this.renderMedia();    break;
                 case 'qa':       this.renderQA();       break;
+                case 'amenities': this.renderAmenities(); break;
+                case 'special-hours': this.renderSpecialHours(); break;
+                case 'service-areas': this.renderServiceAreas(); break;
             }
             return;
         }
@@ -228,6 +236,9 @@ const app = {
             case 'services': this.fetchServices(); break;
             case 'media':    this.fetchMedia();    break;
             case 'qa':       this.fetchQA();       break;
+            case 'amenities': this.fetchAmenities(); break;
+            case 'special-hours': this.fetchSpecialHours(); break;
+            case 'service-areas': this.fetchServiceAreas(); break;
         }
     },
 
@@ -235,19 +246,21 @@ const app = {
     async loadDashboard(force = false) {
         try {
             const hdrs = { headers: this.apiHeaders() };
-            const [profileRes, insightsRes, reviewsRes] = await Promise.all([
+            const [profileRes, insightsRes, reviewsRes, verifRes] = await Promise.all([
                 fetch('/api/gbp/getProfile',   hdrs),
                 fetch('/api/gbp/getInsights',  hdrs),
                 fetch('/api/gbp/fetchReviews', hdrs),
+                fetch('/api/gbp/getVerificationStatus', hdrs),
             ]);
-            if (profileRes.status === 401 || insightsRes.status === 401 || reviewsRes.status === 401) {
+            if (profileRes.status === 401 || insightsRes.status === 401 || reviewsRes.status === 401 || verifRes.status === 401) {
                 return this.handle401();
             }
-            const [pd, id, rd] = await Promise.all([
-                profileRes.json(), insightsRes.json(), reviewsRes.json()
+            const [pd, id, rd, vd] = await Promise.all([
+                profileRes.json(), insightsRes.json(), reviewsRes.json(), verifRes.json()
             ]);
 
             if (pd.success) { this.state.profile  = pd.profile;   this.renderProfile();  }
+            if (vd.success) { this.state.verification = vd.data; this.renderProfile();  }
             if (id.success) { this.state.insights = id.insights;  this.renderChart();    }
             if (rd.success) {
                 this.state.reviews = rd.reviews;
@@ -268,8 +281,15 @@ const app = {
         const p = this.state.profile;
         if (!p) return;
 
+        // Verification Badge
+        const v = this.state.verification;
+        const isVerified = v?.verifications?.some(ver => ver.state === 'COMPLETED');
+        const verifBadge = isVerified 
+            ? '<span class="verif-badge verified"><i data-lucide="check-circle"></i> Verified</span>'
+            : '<span class="verif-badge unverified"><i data-lucide="alert-circle"></i> Unverified</span>';
+
         // Business chip in topbar
-        $('business-chip').innerHTML = `<i data-lucide="map-pin"></i>${p.title}`;
+        $('business-chip').innerHTML = `<i data-lucide="map-pin"></i>${p.title} ${isVerified ? '<i data-lucide="check-circle" class="verif-icon-mini"></i>' : ''}`;
 
         // Profile card
         const catLabel = p.categories?.primary || 'Healthcare';
@@ -279,7 +299,7 @@ const app = {
                     <h3 class="card-title">Business Profile</h3>
                     <p class="card-desc">Eritage ENT Care</p>
                 </div>
-                <i data-lucide="building-2" class="card-icon"></i>
+                ${verifBadge}
             </div>
             <span class="profile-category">${catLabel}</span>
             <div class="profile-details" style="margin-top:14px;">
@@ -296,7 +316,7 @@ const app = {
                 ${p.website ? `
                 <div class="profile-row">
                     <i data-lucide="globe"></i>
-                    <a href="${p.website}" target="_blank" rel="noopener">${p.website.replace(/^https?:\/\//, '')}</a>
+                    <a href="${p.website}" target="_blank" rel="noopener" class="profile-link">${p.website.replace(/^https?:\/\//, '')}</a>
                 </div>` : ''}
                 ${p.address?.addressLines ? `
                 <div class="profile-row">
@@ -1050,32 +1070,26 @@ const app = {
     renderQA() {
         const list = $('qa-list');
         const count = $('qa-count');
-        const questions = this.state.qa;
-        if (count) count.innerHTML = `<strong>${questions.length}</strong> question${questions.length !== 1 ? 's' : ''}`;
+        if (count) count.innerHTML = 'Retired';
 
-        if (!questions.length) {
-            list.innerHTML = this.emptyState('message-circle', 'No questions yet', 'Customer questions will appear here.');
-            return;
-        }
-        list.innerHTML = questions.map(q => `
-            <div class="qa-card">
-                <div class="qa-question">
-                    <div class="qa-q-icon">Q</div>
-                    <div class="qa-q-text">${this.esc(q.text || q.question || 'Question')}</div>
+        list.innerHTML = `
+            <div class="card" style="padding: 40px 20px; text-align: center;">
+                <div style="font-size: 48px; margin-bottom: 20px; opacity: 0.5;">
+                    <i data-lucide="message-square-off" style="width: 64px; height: 64px;"></i>
                 </div>
-                ${q.topAnswers?.length || q.answer ? `
-                <div class="qa-answer">
-                    <div class="qa-a-icon">A</div>
-                    <div class="qa-a-text">${this.esc(q.topAnswers?.[0]?.text || q.answer || '')}</div>
-                </div>` : `
-                <div style="margin-top:4px;">
-                    <button class="btn btn-ghost btn-sm"
-                        onclick="app.openAnswerModal('${this.esc(q.name)}')">
-                        <i data-lucide="reply"></i> Answer
-                    </button>
-                </div>`}
+                <h3 style="font-size: 20px; font-weight: 700; margin-bottom: 12px; color: var(--text);">Q&A API Discontinued</h3>
+                <p style="color: var(--text-muted); max-width: 500px; margin: 0 auto 24px; line-height: 1.6;">
+                    Google permanently retired the Business Profile Q&A API on <strong>November 3, 2025</strong>. 
+                    This feature has been replaced by AI-powered <strong>Ask Maps (Gemini)</strong>, 
+                    which handles customer inquiries automatically on Google Maps and Search.
+                </p>
+                <div style="background: var(--bg-secondary); padding: 16px; border-radius: 12px; display: inline-block;">
+                    <a href="https://support.google.com/business/answer/14187016" target="_blank" class="btn btn-ghost">
+                        <i data-lucide="external-link"></i> Learn about AI-powered inquiries
+                    </a>
+                </div>
             </div>
-        `).join('');
+        `;
         lucide.createIcons();
     },
 
@@ -1482,6 +1496,433 @@ const app = {
         const card = `<div class="skeleton" style="height:${h}px;border-radius:12px;${extra}"></div>`;
         if (grid) return `<div style="display:contents">${Array(n).fill(card).join('')}</div>`;
         return `<div style="display:flex;flex-direction:column;gap:12px;">${Array(n).fill(card).join('')}</div>`;
+    },
+
+    // ── Amenities (Attributes) ────────────────────────────
+    async fetchAmenities() {
+        const grid = $('amenities-grid');
+        grid.innerHTML = this.loadingCards(6, 100, true);
+        try {
+            const data = await this.apiFetch('/api/gbp/getAttributes');
+            if (data.success) {
+                this.state.amenities = data.attributes;
+                this.state.dataLoaded.amenities = true;
+                this.renderAmenities();
+            } else {
+                grid.innerHTML = this.emptyState('info', 'No amenities found', data.message || '');
+            }
+        } catch (err) {
+            grid.innerHTML = this.emptyState('wifi-off', 'Connection error', '');
+        }
+    },
+
+    renderAmenities() {
+        const grid = $('amenities-grid');
+        const count = $('amenities-count');
+        const attrs = this.state.amenities;
+        if (count) count.innerHTML = `<strong>${attrs.length}</strong> attribute${attrs.length !== 1 ? 's' : ''}`;
+
+        if (!attrs.length) {
+            grid.innerHTML = this.emptyState('info', 'No amenities found', 'Google has not assigned any attributes to this business category yet.');
+            return;
+        }
+
+        grid.innerHTML = attrs.map(a => {
+            let valStr = 'Unknown';
+            if (a.valueType === 'BOOL') valStr = a.values[0] ? 'Yes' : 'No';
+            if (a.valueType === 'ENUM') valStr = a.values[0];
+            if (a.valueType === 'MULTIPLE_ENUM') valStr = a.values.join(', ');
+
+            return `
+            <div class="card amenity-card">
+                <div class="amenity-head">
+                    <span class="amenity-label">${this.esc(a.displayName || a.attributeId)}</span>
+                    <button class="btn btn-ghost btn-sm" onclick="app.openEditAttributeModal('${a.attributeId}')">
+                        <i data-lucide="edit-2"></i>
+                    </button>
+                </div>
+                <div class="amenity-value ${valStr === 'Yes' ? 'val-yes' : valStr === 'No' ? 'val-no' : ''}">
+                    ${this.esc(valStr)}
+                </div>
+            </div>
+            `;
+        }).join('');
+        lucide.createIcons(grid);
+    },
+
+    openEditAttributeModal(attrId) {
+        const attr = this.state.amenities.find(a => a.attributeId === attrId);
+        if (!attr) return;
+
+        $('modal-title').textContent = `Edit ${attr.displayName || attr.attributeId}`;
+        let inputHTML = '';
+
+        if (attr.valueType === 'BOOL') {
+            const isTrue = attr.values[0] === true;
+            inputHTML = `
+                <div class="form-group">
+                    <label class="form-label">Value</label>
+                    <select class="form-control" id="edit-attr-val">
+                        <option value="true" ${isTrue ? 'selected' : ''}>Yes / True</option>
+                        <option value="false" ${!isTrue ? 'selected' : ''}>No / False</option>
+                    </select>
+                </div>
+            `;
+        } else {
+            inputHTML = `
+                <div class="form-group">
+                    <label class="form-label">Value (comma separated if multiple)</label>
+                    <input type="text" class="form-control" id="edit-attr-val" value="${this.esc(attr.values.join(', '))}">
+                </div>
+            `;
+        }
+
+        $('modal-body').innerHTML = `
+            ${inputHTML}
+            <div class="modal-actions">
+                <button class="btn btn-ghost" onclick="app.closeModal()">Cancel</button>
+                <button class="btn btn-primary" id="save-attr-btn">Save Changes</button>
+            </div>
+        `;
+
+        $('save-attr-btn').addEventListener('click', () => this.updateAttribute(attrId));
+        this.openModal();
+    },
+
+    async updateAttribute(attrId) {
+        const attr = this.state.amenities.find(a => a.attributeId === attrId);
+        const rawVal = $('edit-attr-val').value;
+        let values = [];
+
+        if (attr.valueType === 'BOOL') {
+            values = [rawVal === 'true'];
+        } else {
+            values = rawVal.split(',').map(s => s.trim()).filter(Boolean);
+        }
+
+        const btn = $('save-attr-btn');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner"></span> Saving...';
+
+        try {
+            const res = await fetch('/api/gbp/updateAttributes', {
+                method: 'PATCH',
+                headers: this.apiHeaders({ 'Content-Type': 'application/json' }),
+                body: JSON.stringify({
+                    attributeData: {
+                        attributes: [{
+                            attributeId: attrId,
+                            valueType: attr.valueType,
+                            values: values
+                        }]
+                    }
+                })
+            });
+            const data = await res.json();
+            if (data.success) {
+                this.toast('Amenity updated successfully.', 'success');
+                this.closeModal();
+                this.fetchAmenities();
+            } else {
+                this.toast(data.message || 'Update failed', 'error');
+            }
+        } catch (err) {
+            this.toast('Connection error.', 'error');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = 'Save Changes';
+        }
+    },
+
+    // ── Special Hours ─────────────────────────────────────
+    async fetchSpecialHours() {
+        const list = $('special-hours-list');
+        list.innerHTML = this.loadingCards(4, 80);
+        try {
+            const res = await fetch('/api/gbp/getProfile', { headers: this.apiHeaders() });
+            const data = await res.json();
+            if (data.success) {
+                this.state.profile = data.profile;
+                this.renderSpecialHours();
+            } else {
+                list.innerHTML = this.emptyState('calendar-days', 'No hours found', data.message || '');
+            }
+        } catch (err) {
+            list.innerHTML = this.emptyState('wifi-off', 'Connection error', '');
+        }
+    },
+
+    renderSpecialHours() {
+        const list = $('special-hours-list');
+        const count = $('special-hours-count');
+        const hours = this.state.profile?.specialHours?.specialHourPeriods || [];
+        if (count) count.innerHTML = `<strong>${hours.length}</strong> special period${hours.length !== 1 ? 's' : ''}`;
+
+        if (!hours.length) {
+            list.innerHTML = this.emptyState('calendar-days', 'No special hours', 'Add holiday or seasonal hours to keep patients informed.');
+            return;
+        }
+
+        // Sort by date
+        const sorted = [...hours].sort((a, b) => {
+            const da = new Date(a.startDate.year, a.startDate.month - 1, a.startDate.day);
+            const db = new Date(b.startDate.year, b.startDate.month - 1, b.startDate.day);
+            return da - db;
+        });
+
+        list.innerHTML = sorted.map((p, idx) => {
+            const dateStr = `${p.startDate.day}/${p.startDate.month}/${p.startDate.year}`;
+            const isClosed = p.closed;
+            return `
+            <div class="card special-hour-card">
+                <div class="sh-info">
+                    <div class="sh-date">${dateStr}</div>
+                    <div class="sh-status ${isClosed ? 'sh-closed' : 'sh-open'}">
+                        ${isClosed ? 'Closed' : `${p.openTime.hours}:${p.openTime.minutes || '00'} - ${p.closeTime.hours}:${p.closeTime.minutes || '00'}`}
+                    </div>
+                </div>
+                <button class="btn btn-ghost btn-sm" onclick="app.deleteSpecialHour(${idx})">
+                    <i data-lucide="trash-2" class="text-error"></i>
+                </button>
+            </div>
+            `;
+        }).join('');
+        lucide.createIcons(list);
+
+        // Add handler for "Add Special Hour" button if not already added
+        $('add-special-hour-btn').onclick = () => this.openSpecialHourModal();
+    },
+
+    openSpecialHourModal() {
+        $('modal-title').textContent = 'Add Special Hour';
+        $('modal-body').innerHTML = `
+            <div class="form-group">
+                <label class="form-label">Date</label>
+                <input type="date" class="form-control" id="sh-date" required>
+            </div>
+            <div class="form-group" style="margin-top:12px;">
+                <label class="form-label" style="display:flex;align-items:center;gap:8px;">
+                    <input type="checkbox" id="sh-closed"> Business is Closed
+                </label>
+            </div>
+            <div id="sh-times-group">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;">
+                    <div class="form-group">
+                        <label class="form-label">Open Time</label>
+                        <input type="time" class="form-control" id="sh-open" value="09:00">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Close Time</label>
+                        <input type="time" class="form-control" id="sh-close" value="17:00">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-ghost" onclick="app.closeModal()">Cancel</button>
+                <button class="btn btn-primary" id="save-sh-btn">Add Period</button>
+            </div>
+        `;
+
+        $('sh-closed').addEventListener('change', (e) => {
+            $('sh-times-group').style.display = e.target.checked ? 'none' : 'block';
+        });
+
+        $('save-sh-btn').addEventListener('click', () => this.addSpecialHour());
+        this.openModal();
+    },
+
+    async addSpecialHour() {
+        const dateVal = $('sh-date').value;
+        if (!dateVal) { this.toast('Please select a date.', 'error'); return; }
+
+        const [y, m, d] = dateVal.split('-').map(Number);
+        const closed = $('sh-closed').checked;
+        const openVal = $('sh-open').value;
+        const closeVal = $('sh-close').value;
+
+        const newPeriod = {
+            startDate: { year: y, month: m, day: d },
+            closed: closed
+        };
+
+        if (!closed) {
+            const [oh, om] = openVal.split(':').map(Number);
+            const [ch, cm] = closeVal.split(':').map(Number);
+            newPeriod.openTime = { hours: oh, minutes: om };
+            newPeriod.closeTime = { hours: ch, minutes: cm };
+        }
+
+        const currentPeriods = this.state.profile?.specialHours?.specialHourPeriods || [];
+        const updatedPeriods = [...currentPeriods, newPeriod];
+
+        this.updateSpecialHours(updatedPeriods);
+    },
+
+    async deleteSpecialHour(idx) {
+        if (!confirm('Remove this special hour period?')) return;
+        const currentPeriods = this.state.profile?.specialHours?.specialHourPeriods || [];
+        const updatedPeriods = currentPeriods.filter((_, i) => i !== idx);
+        this.updateSpecialHours(updatedPeriods);
+    },
+
+    async updateSpecialHours(periods) {
+        const btn = $('save-sh-btn');
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span> Saving...';
+        }
+
+        try {
+            const res = await fetch('/api/gbp/updateProfile', {
+                method: 'PATCH',
+                headers: this.apiHeaders({ 'Content-Type': 'application/json' }),
+                body: JSON.stringify({
+                    updateMask: 'specialHours',
+                    updateData: {
+                        specialHours: { specialHourPeriods: periods }
+                    }
+                })
+            });
+            const data = await res.json();
+            if (data.success) {
+                this.toast('Special hours updated.', 'success');
+                this.closeModal();
+                this.state.profile = data.profile; // API returns updated location
+                this.renderSpecialHours();
+            } else {
+                this.toast(data.message || 'Update failed', 'error');
+            }
+        } catch (err) {
+            this.toast('Connection error.', 'error');
+        } catch (err) {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = 'Add Period';
+            }
+        }
+        },
+
+    // ── Service Areas ─────────────────────────────────────
+    async fetchServiceAreas() {
+        const list = $('service-areas-list');
+        list.innerHTML = this.loadingCards(4, 60);
+        try {
+            const res = await fetch('/api/gbp/getProfile', { headers: this.apiHeaders() });
+            const data = await res.json();
+            if (data.success) {
+                this.state.profile = data.profile;
+                this.renderServiceAreas();
+            } else {
+                list.innerHTML = this.emptyState('map', 'No areas found', data.message || '');
+            }
+        } catch (err) {
+            list.innerHTML = this.emptyState('wifi-off', 'Connection error', '');
+        }
+    },
+
+    renderServiceAreas() {
+        const list = $('service-areas-list');
+        const count = $('service-areas-count');
+        const areas = this.state.profile?.serviceArea?.places?.placeInfos || [];
+        if (count) count.innerHTML = `<strong>${areas.length}</strong> area${areas.length !== 1 ? 's' : ''}`;
+
+        if (!areas.length) {
+            list.innerHTML = this.emptyState('map', 'No service areas', 'Define areas where you provide on-site services.');
+            return;
+        }
+
+        list.innerHTML = areas.map((a, idx) => `
+            <div class="card service-area-card">
+                <div class="sa-info">
+                    <i data-lucide="map-pin" class="sa-icon"></i>
+                    <span class="sa-name">${this.esc(a.name)}</span>
+                </div>
+                <button class="btn btn-ghost btn-sm" onclick="app.deleteServiceArea(${idx})">
+                    <i data-lucide="trash-2" class="text-error"></i>
+                </button>
+            </div>
+        `).join('');
+        lucide.createIcons(list);
+
+        $('add-service-area-btn').onclick = () => this.openAddServiceAreaModal();
+    },
+
+    openAddServiceAreaModal() {
+        $('modal-title').textContent = 'Add Service Area';
+        $('modal-body').innerHTML = `
+            <div class="form-group">
+                <label class="form-label">Place Name (e.g. Entebbe, Uganda)</label>
+                <input type="text" class="form-control" id="sa-name" placeholder="Search for a city or region..." required>
+                <p class="form-help">Note: You must provide a valid place name recognized by Google.</p>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-ghost" onclick="app.closeModal()">Cancel</button>
+                <button class="btn btn-primary" id="save-sa-btn">Add Area</button>
+            </div>
+        `;
+
+        $('save-sa-btn').addEventListener('click', () => this.addServiceArea());
+        this.openModal();
+    },
+
+    async addServiceArea() {
+        const name = $('sa-name').value.trim();
+        if (!name) { this.toast('Please enter a place name.', 'error'); return; }
+
+        const currentAreas = this.state.profile?.serviceArea?.places?.placeInfos || [];
+        // Note: In a real app, you'd use Google Places Autocomplete to get a placeId.
+        // For the MVP, we assume the user provides a string that Google can match,
+        // although the API strictly prefers placeId.
+        const updatedAreas = [...currentAreas, { name: name }];
+
+        this.updateServiceAreas(updatedAreas);
+    },
+
+    async deleteServiceArea(idx) {
+        if (!confirm('Remove this service area?')) return;
+        const currentAreas = this.state.profile?.serviceArea?.places?.placeInfos || [];
+        const updatedAreas = currentAreas.filter((_, i) => i !== idx);
+        this.updateServiceAreas(updatedAreas);
+    },
+
+    async updateServiceAreas(areas) {
+        const btn = $('save-sa-btn');
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span> Saving...';
+        }
+
+        try {
+            const res = await fetch('/api/gbp/updateProfile', {
+                method: 'PATCH',
+                headers: this.apiHeaders({ 'Content-Type': 'application/json' }),
+                body: JSON.stringify({
+                    updateMask: 'serviceArea',
+                    updateData: {
+                        serviceArea: {
+                            businessType: 'CUSTOMER_LOCATION_ONLY',
+                            places: { placeInfos: areas }
+                        }
+                    }
+                })
+            });
+            const data = await res.json();
+            if (data.success) {
+                this.toast('Service areas updated.', 'success');
+                this.closeModal();
+                this.state.profile = data.profile;
+                this.renderServiceAreas();
+            } else {
+                this.toast(data.message || 'Update failed', 'error');
+            }
+        } catch (err) {
+            this.toast('Connection error.', 'error');
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = 'Add Area';
+            }
+        }
     },
 };
 
