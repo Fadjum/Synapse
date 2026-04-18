@@ -94,7 +94,13 @@ When given a task:
 # SESSION CONTEXT
 
 ## Last Worked On
-- **Completed Core Feature Set:**
+- **Chat Bug Fixes & Vercel Optimization (2026-04-17):**
+    - **Fixed sendWithRetry Delays:** Reduced initial delay from 15s to 2s and capped at 10s to ensure total retry time stays well within Vercel's 60s timeout limit.
+    - **Added Chat Fetch Timeout:** Implemented a 25s `AbortController` timeout in the frontend for `/api/agent/chat` to prevent indefinite hangs if the connection or function fails.
+    - **Synced with Fadjumah/Synapse:** Identified that the latest work was residing in the `Fadjumah/Synapse` repository. Updated local environment to match this upstream repository.
+    - **Vercel Build Optimization:** Integrated Claude's fix to combine 18 API files into a single serverless function via `vercel.json`.
+
+- **Completed Core Feature Set (Previous):**
     - **Profile & Hours Management:** Fully implemented profile editing (phone, website, address, description) and a business hours editor in the frontend. Updated `gbpClient` and `normalizeProfile` to include `description`.
     - **Service Management:** Added UI for creating, editing, and deleting services, fully integrated with the `updateServiceList` backend.
     - **Advanced Post Features:** Expanded post creation to support `OFFER` and `EVENT` types (including coupon codes, links, event dates, and terms).
@@ -105,8 +111,8 @@ When given a task:
 ## Status
 - **Backend:** All core GBP management endpoints (Profile, Reviews, Posts, Services, Media, Insights) are verified and functional. Added `deletePost` endpoint.
 - **Frontend:** Fully feature-complete dashboard and management views. Supports full CRUD for posts and services, and full profile/hours editing.
-- **Git:** All changes integrated into the codebase.
+- **Git:** Synchronized with `Fadjumah/Synapse` main branch.
 
 ## Next Steps
-- **Vercel Setup:** User needs to manually add environment variables (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN`, etc.) in the Vercel dashboard.
+- **Vercel Deployment:** Verify the new `builds` logic in Vercel to ensure all API routes are correctly routed to `server.js`.
 - **Production Validation:** Conduct a final end-to-end smoke test on the live GBP account once deployed to Vercel.

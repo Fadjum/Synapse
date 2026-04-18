@@ -1,4 +1,3 @@
-
 const axios = require('axios');
 const { google } = require('googleapis');
 const { HttpsProxyAgent } = require('https-proxy-agent');
@@ -169,7 +168,7 @@ const getProfile = async () => {
 
         if (!locationId) throw new Error('GBP_LOCATION_ID is not set.');
 
-        const url = `https://mybusinessbusinessinformation.googleapis.com/v1/locations/${locationId}?readMask=name,title,storefrontAddress,websiteUri,regularHours,specialHours,serviceArea.places,serviceArea.businessType,phoneNumbers,categories,metadata,latlng,description`;
+        const url = `https://mybusinessbusinessinformation.googleapis.com/v1/locations/${locationId}?readMask=name,title,storefrontAddress,websiteUri,regularHours,phoneNumbers,categories,metadata,latlng,description`;
 
         const response = await axios.get(url, {
             ...axiosConfig,
@@ -288,38 +287,6 @@ const getAttributes = async () => {
     } catch (error) {
         console.error('Failed to fetch attributes:', error.message);
         return extractGBPError(error, 'GET_ATTRIBUTES');
-    }
-};
-
-/**
- * Updates the attributes for the location.
- * attributeData should be the single attribute object with "name", "attributeId", and values.
- */
-const updateAttributes = async (attribute) => {
-    try {
-        await throttle();
-        const accessToken = await getFreshAccessToken();
-        
-        if (!attribute || !attribute.name || !attribute.attributeId) {
-            throw new Error('Invalid attribute data: name and attributeId are required.');
-        }
-
-        // attribute.name is e.g. "locations/{id}/attributes/{attrId}"
-        const url = `https://mybusinessbusinessinformation.googleapis.com/v1/${attribute.name}?attributeMask=${attribute.attributeId}`;
-
-        const response = await axios.patch(url, attribute, {
-            ...axiosConfig,
-            headers: {
-                Authorization: `Bearer ${accessToken}`,
-                'Content-Type': 'application/json'
-            },
-            timeout: 10000
-        });
-
-        return response.data;
-    } catch (error) {
-        console.error('Failed to update attributes:', error.message);
-        return extractGBPError(error, 'UPDATE_ATTRIBUTES');
     }
 };
 
@@ -638,7 +605,6 @@ module.exports = {
     getVerificationStatus,
     getAttributes,
     updateProfile,
-    updateAttributes,
     createPost,
     deletePost,
     fetchQuestions,

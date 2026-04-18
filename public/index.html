@@ -58,17 +58,17 @@
                     <i data-lucide="image"></i>
                     <span>Media</span>
                 </a>
-                <a href="#" class="nav-item" data-view="amenities">
-                    <i data-lucide="info"></i>
-                    <span>Amenities</span>
+
+                <span class="nav-section-label">Intelligence</span>
+                <a href="#" class="nav-item" data-view="agent">
+                    <i data-lucide="sparkles"></i>
+                    <span>Synapse AI</span>
+                    <span class="nav-badge-ai">AI</span>
                 </a>
-                <a href="#" class="nav-item" data-view="special-hours">
-                    <i data-lucide="calendar-days"></i>
-                    <span>Special Hours</span>
-                </a>
-                <a href="#" class="nav-item" data-view="service-areas">
-                    <i data-lucide="map"></i>
-                    <span>Service Areas</span>
+                <a href="#" class="nav-item" data-view="autopilot">
+                    <i data-lucide="bot"></i>
+                    <span>Autopilot</span>
+                    <span class="nav-badge-ai">AUTO</span>
                 </a>
             </nav>
 
@@ -269,46 +269,120 @@
                     <div class="media-grid" id="media-grid"></div>
                 </section>
 
-                <!-- ── AMENITIES ── -->
-                <section class="view" id="view-amenities">
+                <!-- ── AUTOPILOT ── -->
+                <section class="view" id="view-autopilot">
                     <div class="view-toolbar">
-                        <div class="toolbar-left">
-                            <span class="results-count" id="amenities-count">Loading...</span>
+                        <div class="toolbar-title-group">
+                            <h2 class="toolbar-title">Autopilot</h2>
+                            <p class="toolbar-subtitle">Autonomous daily posting &amp; review replies, with policy safeguards.</p>
                         </div>
-                    </div>
-                    <div class="attributes-grid" id="amenities-grid"></div>
-                </section>
-
-                <!-- ── SPECIAL HOURS ── -->
-                <section class="view" id="view-special-hours">
-                    <div class="view-toolbar">
-                        <div class="toolbar-left">
-                            <span class="results-count" id="special-hours-count">Loading...</span>
-                        </div>
-                        <div class="toolbar-right">
-                            <button class="btn btn-primary" id="add-special-hour-btn">
-                                <i data-lucide="plus"></i>
-                                Add Special Hour
+                        <div class="toolbar-actions">
+                            <button class="btn btn-ghost" id="ap-refresh-btn">
+                                <i data-lucide="refresh-cw"></i> Refresh
+                            </button>
+                            <button class="btn btn-ghost" id="ap-dry-post-btn" title="Generate today's post without publishing">
+                                <i data-lucide="flask-conical"></i> Preview Today's Post
+                            </button>
+                            <button class="btn btn-primary" id="ap-run-now-btn">
+                                <i data-lucide="play"></i> Run Daily Cycle Now
                             </button>
                         </div>
                     </div>
-                    <div class="special-hours-list" id="special-hours-list"></div>
-                </section>
 
-                <!-- ── SERVICE AREAS ── -->
-                <section class="view" id="view-service-areas">
-                    <div class="view-toolbar">
-                        <div class="toolbar-left">
-                            <span class="results-count" id="service-areas-count">Loading...</span>
+                    <div class="ap-grid" id="ap-grid">
+                        <div class="ap-card" id="ap-status-card">
+                            <div class="ap-card-header">
+                                <i data-lucide="activity"></i>
+                                <h3>Status</h3>
+                            </div>
+                            <div class="ap-card-body" id="ap-status-body">
+                                <div class="skeleton" style="width:100%;height:90px;"></div>
+                            </div>
                         </div>
-                        <div class="toolbar-right">
-                            <button class="btn btn-primary" id="add-service-area-btn">
-                                <i data-lucide="plus"></i>
-                                Add Area
-                            </button>
+
+                        <div class="ap-card" id="ap-today-card">
+                            <div class="ap-card-header">
+                                <i data-lucide="calendar-check"></i>
+                                <h3>Today's Topic</h3>
+                            </div>
+                            <div class="ap-card-body" id="ap-today-body">
+                                <div class="skeleton" style="width:100%;height:90px;"></div>
+                            </div>
+                        </div>
+
+                        <div class="ap-card ap-card-wide">
+                            <div class="ap-card-header">
+                                <i data-lucide="calendar-range"></i>
+                                <h3>7-Day Content Calendar</h3>
+                            </div>
+                            <div class="ap-card-body" id="ap-calendar-body">
+                                <div class="skeleton" style="width:100%;height:120px;"></div>
+                            </div>
+                        </div>
+
+                        <div class="ap-card ap-card-wide">
+                            <div class="ap-card-header">
+                                <i data-lucide="scroll-text"></i>
+                                <h3>Recent Autonomous Actions</h3>
+                            </div>
+                            <div class="ap-card-body" id="ap-log-body">
+                                <div class="skeleton" style="width:100%;height:200px;"></div>
+                            </div>
+                        </div>
+
+                        <div class="ap-card ap-card-wide">
+                            <div class="ap-card-header">
+                                <i data-lucide="shield-alert"></i>
+                                <h3>Reviews Flagged for Human Attention</h3>
+                            </div>
+                            <div class="ap-card-body" id="ap-flagged-body">
+                                <p class="muted">Click "Run Daily Cycle Now" to scan reviews.</p>
+                            </div>
                         </div>
                     </div>
-                    <div class="service-areas-list" id="service-areas-list"></div>
+                </section>
+
+                <!-- ── AI AGENT ── -->
+                <section class="view" id="view-agent">
+                    <div class="chat-wrap" id="chat-wrap">
+                        <div class="chat-suggestions" id="chat-suggestions">
+                            <div class="chat-welcome">
+                                <div class="chat-bot-avatar">
+                                    <i data-lucide="sparkles"></i>
+                                </div>
+                                <h3>Synapse AI</h3>
+                                <p>Your intelligent GBP assistant for Eritage ENT Care. Ask me anything about your business profile, reviews, performance, or let me take action for you.</p>
+                            </div>
+                            <div class="suggestion-chips">
+                                <button class="suggestion-chip" data-prompt="Give me a full overview of the business including reviews, posts, and performance metrics">Full business overview</button>
+                                <button class="suggestion-chip" data-prompt="Show me all unanswered reviews and suggest professional replies for each one">Unanswered reviews</button>
+                                <button class="suggestion-chip" data-prompt="What are my performance metrics this month? Give me analysis and recommendations">Performance metrics</button>
+                                <button class="suggestion-chip" data-prompt="Create a professional Google post announcing ENT consultation services are available at Eritage ENT Care">Create a post</button>
+                                <button class="suggestion-chip" data-prompt="List all media photos on my Google profile and tell me what you find">List media</button>
+                                <button class="suggestion-chip" data-prompt="What medical services are listed on my Google profile?">View services</button>
+                            </div>
+                        </div>
+                        <div class="chat-messages" id="chat-messages"></div>
+                    </div>
+                    <div class="chat-input-bar">
+                        <div class="chat-input-inner">
+                            <textarea
+                                id="chat-input"
+                                class="chat-textarea"
+                                placeholder="Ask Synapse anything about your GBP…"
+                                rows="1"
+                            ></textarea>
+                            <button class="chat-send-btn" id="chat-send-btn" title="Send message">
+                                <i data-lucide="send"></i>
+                            </button>
+                        </div>
+                        <div class="chat-footer-note">
+                            <button class="btn btn-ghost btn-sm" id="chat-clear-btn">
+                                <i data-lucide="trash-2"></i> Clear
+                            </button>
+                            <span class="chat-hint">Enter to send &nbsp;·&nbsp; Shift+Enter for new line</span>
+                        </div>
+                    </div>
                 </section>
 
             </main>

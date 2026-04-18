@@ -11,9 +11,8 @@ const VIEW_META = {
     qa:        { title: 'Q & A',       subtitle: 'Customer questions and answers' },
     services:  { title: 'Services',    subtitle: 'Medical services offered at Eritage ENT Care' },
     media:     { title: 'Media',       subtitle: 'Photos and videos on your listing' },
-    amenities: { title: 'Amenities',   subtitle: 'Business attributes and amenities' },
-    'special-hours': { title: 'Special Hours', subtitle: 'Holiday and seasonal business hours' },
-    'service-areas': { title: 'Service Areas', subtitle: 'Geographic areas served by this business' },
+    agent:     { title: 'Synapse AI',  subtitle: 'Your intelligent GBP assistant' },
+    autopilot: { title: 'Autopilot',   subtitle: 'Autonomous daily posting and review replies' },
 };
 
 const STAR_MAP = { FIVE: 5, FOUR: 4, THREE: 3, TWO: 2, ONE: 1 };
@@ -51,14 +50,17 @@ const app = {
         services: [],
         media:    [],
         qa:       [],
-        amenities: [],
-        verification: null,
         reviewFilter: 'all',
-        dataLoaded: { reviews: false, posts: false, services: false, media: false, qa: false, amenities: false },
+        dataLoaded: { reviews: false, posts: false, services: false, media: false, qa: false, autopilot: false },
         nextPageTokens: {
             reviews: null,
             posts: null,
             media: null
+        },
+        chat: {
+            messages: [],
+            history: [],
+            isThinking: false
         }
     },
 
@@ -159,7 +161,7 @@ const app = {
 
         // Sync button
         $('refresh-btn').addEventListener('click', () => {
-            this.state.dataLoaded = { reviews: false, posts: false, services: false, media: false, qa: false, amenities: false };
+            this.state.dataLoaded = { reviews: false, posts: false, services: false, media: false, qa: false };
             this.loadDashboard(true);
             if (this.state.currentView !== 'dashboard') this.loadView(this.state.currentView, true);
             this.toast('Syncing with Google…', 'info');
@@ -189,12 +191,43 @@ const app = {
 
         // Upload Media
         $('upload-media-btn').addEventListener('click', () => this.openUploadMediaModal());
+
+        // Autopilot
+        const apRefresh = $('ap-refresh-btn');
+        if (apRefresh) apRefresh.addEventListener('click', () => this.fetchAutopilot());
+        const apPreview = $('ap-dry-post-btn');
+        if (apPreview) apPreview.addEventListener('click', () => this.runAutopilotPreview());
+        const apRun = $('ap-run-now-btn');
+        if (apRun) apRun.addEventListener('click', () => this.runAutopilotCycle());
+
+        // AI Agent Chat
+        $('chat-send-btn').addEventListener('click', () => this.sendChatMessage());
+        $('chat-clear-btn').addEventListener('click', () => this.clearChat());
+        $('chat-input').addEventListener('keydown', e => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                this.sendChatMessage();
+            }
+        });
+        $('chat-input').addEventListener('input', function () {
+            this.style.height = 'auto';
+            this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+        });
+        document.querySelectorAll('.suggestion-chip').forEach(chip => {
+            chip.addEventListener('click', () => {
+                $('chat-input').value = chip.dataset.prompt;
+                this.sendChatMessage();
+            });
+        });
     },
 
     // ── View switching ────────────────────────────────────
     switchView(viewId) {
         if (this.state.currentView === viewId) return;
         this.state.currentView = viewId;
+
+        // Agent view needs padding-free full-height layout
+        $('content').classList.toggle('agent-mode', viewId === 'agent');
 
         // Update nav
         document.querySelectorAll('.nav-item').forEach(el => {
@@ -223,9 +256,7 @@ const app = {
                 case 'services': this.renderServices(); break;
                 case 'media':    this.renderMedia();    break;
                 case 'qa':       this.renderQA();       break;
-                case 'amenities': this.renderAmenities(); break;
-                case 'special-hours': this.renderSpecialHours(); break;
-                case 'service-areas': this.renderServiceAreas(); break;
+                case 'autopilot': this.renderAutopilot(); break;
             }
             return;
         }
@@ -236,9 +267,7 @@ const app = {
             case 'services': this.fetchServices(); break;
             case 'media':    this.fetchMedia();    break;
             case 'qa':       this.fetchQA();       break;
-            case 'amenities': this.fetchAmenities(); break;
-            case 'special-hours': this.fetchSpecialHours(); break;
-            case 'service-areas': this.fetchServiceAreas(); break;
+            case 'autopilot': this.fetchAutopilot(); break;
         }
     },
 
@@ -246,25 +275,19 @@ const app = {
     async loadDashboard(force = false) {
         try {
             const hdrs = { headers: this.apiHeaders() };
-            const [profileRes, insightsRes, reviewsRes, verifRes] = await Promise.all([
+            const [profileRes, insightsRes, reviewsRes] = await Promise.all([
                 fetch('/api/gbp/getProfile',   hdrs),
                 fetch('/api/gbp/getInsights',  hdrs),
                 fetch('/api/gbp/fetchReviews', hdrs),
-                fetch('/api/gbp/getVerificationStatus', hdrs),
             ]);
-            if (profileRes.status === 401 || insightsRes.status === 401 || reviewsRes.status === 401 || verifRes.status === 401) {
+            if (profileRes.status === 401 || insightsRes.status === 401 || reviewsRes.status === 401) {
                 return this.handle401();
             }
-            const [pd, id, rd, vd] = await Promise.all([
-                profileRes.json(), insightsRes.json(), reviewsRes.json(), verifRes.json()
+            const [pd, id, rd] = await Promise.all([
+                profileRes.json(), insightsRes.json(), reviewsRes.json()
             ]);
 
-            if (pd.success) { this.state.profile  = pd.profile; }
-            if (vd.success) { this.state.verification = vd.data; }
-            
-            // Render profile once both (or either) are loaded
-            if (pd.success || vd.success) { this.renderProfile(); }
-
+            if (pd.success) { this.state.profile  = pd.profile;   this.renderProfile();  }
             if (id.success) { this.state.insights = id.insights;  this.renderChart();    }
             if (rd.success) {
                 this.state.reviews = rd.reviews;
@@ -275,7 +298,6 @@ const app = {
                 this.renderKPIs();
             }
         } catch (err) {
-            console.error('[Synapse] Dashboard load failed:', err);
             this.toast('Could not connect to server.', 'error');
             this.renderKPIs();
         }
@@ -286,15 +308,8 @@ const app = {
         const p = this.state.profile;
         if (!p) return;
 
-        // Verification Badge
-        const v = this.state.verification;
-        const isVerified = v?.verifications && Array.isArray(v.verifications) && v.verifications.some(ver => ver.state === 'COMPLETED');
-        const verifBadge = isVerified 
-            ? '<span class="verif-badge verified"><i data-lucide="check-circle"></i> Verified</span>'
-            : '<span class="verif-badge unverified"><i data-lucide="alert-circle"></i> Unverified</span>';
-
         // Business chip in topbar
-        $('business-chip').innerHTML = `<i data-lucide="map-pin"></i>${p.title} ${isVerified ? '<i data-lucide="check-circle" class="verif-icon-mini"></i>' : ''}`;
+        $('business-chip').innerHTML = `<i data-lucide="map-pin"></i>${p.title}`;
 
         // Profile card
         const catLabel = p.categories?.primary || 'Healthcare';
@@ -304,7 +319,7 @@ const app = {
                     <h3 class="card-title">Business Profile</h3>
                     <p class="card-desc">Eritage ENT Care</p>
                 </div>
-                ${verifBadge}
+                <i data-lucide="building-2" class="card-icon"></i>
             </div>
             <span class="profile-category">${catLabel}</span>
             <div class="profile-details" style="margin-top:14px;">
@@ -321,7 +336,7 @@ const app = {
                 ${p.website ? `
                 <div class="profile-row">
                     <i data-lucide="globe"></i>
-                    <a href="${p.website}" target="_blank" rel="noopener" class="profile-link">${p.website.replace(/^https?:\/\//, '')}</a>
+                    <a href="${p.website}" target="_blank" rel="noopener">${p.website.replace(/^https?:\/\//, '')}</a>
                 </div>` : ''}
                 ${p.address?.addressLines ? `
                 <div class="profile-row">
@@ -1075,26 +1090,32 @@ const app = {
     renderQA() {
         const list = $('qa-list');
         const count = $('qa-count');
-        if (count) count.innerHTML = 'Retired';
+        const questions = this.state.qa;
+        if (count) count.innerHTML = `<strong>${questions.length}</strong> question${questions.length !== 1 ? 's' : ''}`;
 
-        list.innerHTML = `
-            <div class="card" style="padding: 40px 20px; text-align: center;">
-                <div style="font-size: 48px; margin-bottom: 20px; opacity: 0.5;">
-                    <i data-lucide="message-square-off" style="width: 64px; height: 64px;"></i>
+        if (!questions.length) {
+            list.innerHTML = this.emptyState('message-circle', 'No questions yet', 'Customer questions will appear here.');
+            return;
+        }
+        list.innerHTML = questions.map(q => `
+            <div class="qa-card">
+                <div class="qa-question">
+                    <div class="qa-q-icon">Q</div>
+                    <div class="qa-q-text">${this.esc(q.text || q.question || 'Question')}</div>
                 </div>
-                <h3 style="font-size: 20px; font-weight: 700; margin-bottom: 12px; color: var(--text);">Q&A API Discontinued</h3>
-                <p style="color: var(--text-muted); max-width: 500px; margin: 0 auto 24px; line-height: 1.6;">
-                    Google permanently retired the Business Profile Q&A API on <strong>November 3, 2025</strong>. 
-                    This feature has been replaced by AI-powered <strong>Ask Maps (Gemini)</strong>, 
-                    which handles customer inquiries automatically on Google Maps and Search.
-                </p>
-                <div style="background: var(--bg-secondary); padding: 16px; border-radius: 12px; display: inline-block;">
-                    <a href="https://support.google.com/business/answer/14187016" target="_blank" class="btn btn-ghost">
-                        <i data-lucide="external-link"></i> Learn about AI-powered inquiries
-                    </a>
-                </div>
+                ${q.topAnswers?.length || q.answer ? `
+                <div class="qa-answer">
+                    <div class="qa-a-icon">A</div>
+                    <div class="qa-a-text">${this.esc(q.topAnswers?.[0]?.text || q.answer || '')}</div>
+                </div>` : `
+                <div style="margin-top:4px;">
+                    <button class="btn btn-ghost btn-sm"
+                        onclick="app.openAnswerModal('${this.esc(q.name)}')">
+                        <i data-lucide="reply"></i> Answer
+                    </button>
+                </div>`}
             </div>
-        `;
+        `).join('');
         lucide.createIcons();
     },
 
@@ -1503,431 +1524,361 @@ const app = {
         return `<div style="display:flex;flex-direction:column;gap:12px;">${Array(n).fill(card).join('')}</div>`;
     },
 
-    // ── Amenities (Attributes) ────────────────────────────
-    async fetchAmenities() {
-        const grid = $('amenities-grid');
-        grid.innerHTML = this.loadingCards(6, 100, true);
+    // ── AI Agent Chat ──────────────────────────────────────
+    async sendChatMessage() {
+        const input = $('chat-input');
+        const msg = input.value.trim();
+        if (!msg || this.state.chat.isThinking) return;
+
+        input.value = '';
+        input.style.height = 'auto';
+
+        // Hide suggestions after first message
+        const suggestions = $('chat-suggestions');
+        if (suggestions) suggestions.style.display = 'none';
+
+        this.appendChatMessage('user', msg);
+
+        this.state.chat.isThinking = true;
+        $('chat-send-btn').disabled = true;
+        this.showTypingIndicator();
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 55000);
+
         try {
-            const data = await this.apiFetch('/api/gbp/getAttributes');
-            if (data.success) {
-                this.state.amenities = data.attributes;
-                this.state.dataLoaded.amenities = true;
-                this.renderAmenities();
+            const res = await fetch('/api/agent/chat', {
+                method: 'POST',
+                headers: this.apiHeaders({ 'Content-Type': 'application/json' }),
+                body: JSON.stringify({ message: msg, history: this.state.chat.history }),
+                signal: controller.signal
+            });
+            clearTimeout(timeout);
+
+            if (res.status === 401) { this.hideTypingIndicator(); return this.handle401(); }
+
+            const data = await res.json();
+            this.hideTypingIndicator();
+
+            if (res.ok && data.reply) {
+                this.appendChatMessage('ai', data.reply);
+                this.state.chat.history = data.history || [];
             } else {
-                grid.innerHTML = this.emptyState('info', 'No amenities found', data.message || '');
+                this.appendChatMessage('ai', data.error || 'Something went wrong. Please try again.');
             }
         } catch (err) {
-            grid.innerHTML = this.emptyState('wifi-off', 'Connection error', '');
+            clearTimeout(timeout);
+            this.hideTypingIndicator();
+            this.appendChatMessage('ai', err.name === 'AbortError'
+                ? 'The AI took too long to respond. Please try again.'
+                : 'Connection error — please check your network and try again.');
+        } finally {
+            this.state.chat.isThinking = false;
+            $('chat-send-btn').disabled = false;
+            $('chat-input').focus();
         }
     },
 
-    renderAmenities() {
-        const grid = $('amenities-grid');
-        const count = $('amenities-count');
-        const attrs = this.state.amenities || [];
-        if (count) count.innerHTML = `<strong>${attrs.length}</strong> attribute${attrs.length !== 1 ? 's' : ''}`;
+    appendChatMessage(role, text) {
+        const container = $('chat-messages');
+        const time = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
 
-        if (!attrs.length) {
-            grid.innerHTML = this.emptyState('info', 'No amenities found', 'Google has not assigned any attributes to this business category yet.');
-            return;
-        }
+        const el = document.createElement('div');
+        el.className = `chat-msg ${role}`;
 
-        grid.innerHTML = attrs.map(a => {
-            const vals = a.values || [];
-            let valStr = 'Unknown';
-            if (a.valueType === 'BOOL') valStr = vals[0] === true ? 'Yes' : 'No';
-            if (a.valueType === 'ENUM') valStr = vals[0] || 'Unknown';
-            if (a.valueType === 'MULTIPLE_ENUM') valStr = vals.length ? vals.join(', ') : 'None';
+        const content = role === 'ai'
+            ? this.renderMarkdown(text)
+            : `<p>${this.esc(text)}</p>`;
 
-            return `
-            <div class="card amenity-card">
-                <div class="amenity-head">
-                    <span class="amenity-label">${this.esc(a.displayName || a.attributeId)}</span>
-                    <button class="btn btn-ghost btn-sm" onclick="app.openEditAttributeModal('${a.attributeId}')">
-                        <i data-lucide="edit-2"></i>
-                    </button>
-                </div>
-                <div class="amenity-value ${valStr === 'Yes' ? 'val-yes' : valStr === 'No' ? 'val-no' : ''}">
-                    ${this.esc(valStr)}
-                </div>
+        el.innerHTML = `
+            <div class="chat-msg-avatar">
+                <i data-lucide="${role === 'ai' ? 'sparkles' : 'user'}"></i>
             </div>
-            `;
-        }).join('');
-        lucide.createIcons(grid);
+            <div>
+                <div class="chat-bubble">${content}</div>
+                <div class="chat-time">${time}</div>
+            </div>`;
+
+        container.appendChild(el);
+        lucide.createIcons(el);
+
+        this.state.chat.messages.push({ role, text });
+
+        const wrap = $('chat-wrap');
+        wrap.scrollTop = wrap.scrollHeight;
     },
 
-    openEditAttributeModal(attrId) {
-        const attr = this.state.amenities.find(a => a.attributeId === attrId);
-        if (!attr) return;
-
-        $('modal-title').textContent = `Edit ${attr.displayName || attr.attributeId}`;
-        let inputHTML = '';
-        const vals = attr.values || [];
-
-        if (attr.valueType === 'BOOL') {
-            const isTrue = vals[0] === true;
-            inputHTML = `
-                <div class="form-group">
-                    <label class="form-label">Value</label>
-                    <select class="form-control" id="edit-attr-val">
-                        <option value="true" ${isTrue ? 'selected' : ''}>Yes / True</option>
-                        <option value="false" ${!isTrue ? 'selected' : ''}>No / False</option>
-                    </select>
-                </div>
-            `;
-        } else {
-            inputHTML = `
-                <div class="form-group">
-                    <label class="form-label">Value (comma separated if multiple)</label>
-                    <input type="text" class="form-control" id="edit-attr-val" value="${this.esc(vals.join(', '))}">
-                </div>
-            `;
-        }
-
-        $('modal-body').innerHTML = `
-            ${inputHTML}
-            <div class="modal-actions">
-                <button class="btn btn-ghost" onclick="app.closeModal()">Cancel</button>
-                <button class="btn btn-primary" id="save-attr-btn">Save Changes</button>
+    showTypingIndicator() {
+        const container = $('chat-messages');
+        const el = document.createElement('div');
+        el.className = 'chat-msg ai';
+        el.id = 'typing-indicator';
+        el.innerHTML = `
+            <div class="chat-msg-avatar">
+                <i data-lucide="sparkles"></i>
             </div>
-        `;
-
-        $('save-attr-btn').addEventListener('click', () => this.updateAttribute(attrId));
-        this.openModal();
+            <div class="chat-bubble">
+                <div class="typing-indicator">
+                    <div class="typing-dot"></div>
+                    <div class="typing-dot"></div>
+                    <div class="typing-dot"></div>
+                </div>
+            </div>`;
+        container.appendChild(el);
+        lucide.createIcons(el);
+        $('chat-wrap').scrollTop = $('chat-wrap').scrollHeight;
     },
 
-    async updateAttribute(attrId) {
-        const attr = this.state.amenities.find(a => a.attributeId === attrId);
-        const rawVal = $('edit-attr-val').value;
-        let values = [];
+    hideTypingIndicator() {
+        const el = $('typing-indicator');
+        if (el) el.remove();
+    },
 
-        if (attr.valueType === 'BOOL') {
-            values = [rawVal === 'true'];
-        } else if (attr.valueType === 'MULTIPLE_ENUM') {
-            values = rawVal.split(',').map(s => s.trim()).filter(Boolean);
-        } else {
-            values = [rawVal.trim()];
+    clearChat() {
+        this.state.chat.messages = [];
+        this.state.chat.history  = [];
+        $('chat-messages').innerHTML = '';
+        const suggestions = $('chat-suggestions');
+        if (suggestions) suggestions.style.display = 'flex';
+    },
+
+    renderMarkdown(text) {
+        const lines = text.split('\n');
+        let html = '';
+        let inList  = false;
+        let listTag = 'ul';
+
+        for (const raw of lines) {
+            let l = raw
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\*(.+?)\*/g,     '<em>$1</em>')
+                .replace(/`(.+?)`/g,       '<code>$1</code>');
+
+            if (/^#{1,3} /.test(raw)) {
+                if (inList) { html += `</${listTag}>`; inList = false; }
+                html += `<h4>${l.replace(/^#{1,3} /, '')}</h4>`;
+            } else if (/^[-*•] /.test(raw)) {
+                if (!inList || listTag !== 'ul') {
+                    if (inList) html += `</${listTag}>`;
+                    html += '<ul>'; inList = true; listTag = 'ul';
+                }
+                html += `<li>${l.replace(/^[-*•] /, '')}</li>`;
+            } else if (/^\d+\. /.test(raw)) {
+                if (!inList || listTag !== 'ol') {
+                    if (inList) html += `</${listTag}>`;
+                    html += '<ol>'; inList = true; listTag = 'ol';
+                }
+                html += `<li>${l.replace(/^\d+\. /, '')}</li>`;
+            } else if (raw.trim() === '') {
+                if (inList) { html += `</${listTag}>`; inList = false; }
+            } else {
+                if (inList) { html += `</${listTag}>`; inList = false; }
+                html += `<p>${l}</p>`;
+            }
         }
 
-        const btn = $('save-attr-btn');
-        btn.disabled = true;
-        btn.innerHTML = '<span class="spinner"></span> Saving...';
+        if (inList) html += `</${listTag}>`;
+        return html || `<p>${this.esc(text)}</p>`;
+    },
 
+    // ── Autopilot ────────────────────────────────────────────
+    async fetchAutopilot() {
         try {
-            const res = await fetch('/api/gbp/updateAttributes', {
-                method: 'PATCH',
-                headers: this.apiHeaders({ 'Content-Type': 'application/json' }),
-                body: JSON.stringify({
-                    attributeData: {
-                        ...attr,
-                        values
-                    }
-                })
+            const res = await fetch('/api/agent/status', { headers: { 'x-api-key': this.state.apiKey } });
+            const data = await res.json();
+            if (!data.success) throw new Error(data.error || 'status_failed');
+            this.state.autopilot = data;
+            this.state.dataLoaded.autopilot = true;
+            this.renderAutopilot();
+        } catch (e) {
+            $('ap-status-body').innerHTML = `<p class="muted">Failed to load: ${this.esc(e.message)}</p>`;
+        }
+    },
+
+    renderAutopilot() {
+        const data = this.state.autopilot;
+        if (!data) return;
+        const st = data.status || {};
+        const cal = data.calendar || [];
+
+        // Status card
+        const statusBody = $('ap-status-body');
+        if (statusBody) {
+            const on = st.enabled;
+            const dp = st.dailyPost || {};
+            const ar = st.autoReplies || {};
+            statusBody.innerHTML = `
+                <div class="ap-status-row">
+                    <span class="label">Autopilot</span>
+                    <span class="ap-pill ${on ? 'ok' : 'off'}">${on ? 'Enabled' : 'Disabled'}</span>
+                </div>
+                <div class="ap-status-row">
+                    <span class="label">Daily Post</span>
+                    <span class="value">
+                        ${dp.enabled ? `<span class="ap-pill ok">On</span>` : `<span class="ap-pill off">Off</span>`}
+                        ${dp.dryRun ? ` <span class="ap-pill warn">Dry-run</span>` : ''}
+                        ${dp.postedToday === true ? ` <span class="ap-pill info">Posted today</span>` :
+                          dp.postedToday === false ? ` <span class="ap-pill warn">Not yet today</span>` : ''}
+                    </span>
+                </div>
+                <div class="ap-status-row">
+                    <span class="label">Auto-replies</span>
+                    <span class="value">
+                        ${ar.enabled ? `<span class="ap-pill ok">On</span>` : `<span class="ap-pill off">Off</span>`}
+                        ${ar.dryRun ? ` <span class="ap-pill warn">Dry-run</span>` : ''}
+                    </span>
+                </div>
+                <div class="ap-status-row">
+                    <span class="label">Last cycle</span>
+                    <span class="value">${st.lastCycle ? new Date(st.lastCycle.ts).toLocaleString('en-GB') : 'never'}</span>
+                </div>
+                <p class="ap-footnote">Set <code>AUTOPILOT_ENABLED=false</code>, <code>AUTOPILOT_DAILY_POST=false</code>, or <code>AUTOPILOT_AUTO_REPLY=false</code> in the deployment env to toggle. Cron runs daily at 06:00 UTC.</p>
+            `;
+        }
+
+        // Today's theme
+        const todayBody = $('ap-today-body');
+        if (todayBody) {
+            const today = (st.dailyPost && st.dailyPost.todaysTheme) || {};
+            todayBody.innerHTML = `
+                <div class="ap-status-row">
+                    <span class="label">Day</span>
+                    <span class="value">${this.esc(today.dayName || '—')}</span>
+                </div>
+                <div class="ap-status-row">
+                    <span class="label">Theme</span>
+                    <span class="value">${this.esc(today.theme || '—')}</span>
+                </div>
+                <div class="ap-status-row">
+                    <span class="label">Post type</span>
+                    <span class="value">${this.esc(today.topicType || 'STANDARD')}</span>
+                </div>
+                <div class="ap-status-row">
+                    <span class="label">Call-to-action</span>
+                    <span class="value">${today.callToAction ? this.esc(today.callToAction.actionType) : 'none'}</span>
+                </div>
+            `;
+        }
+
+        // 7-day calendar
+        const calBody = $('ap-calendar-body');
+        if (calBody) {
+            const todayStr = new Date().toISOString().slice(0, 10);
+            calBody.innerHTML = `<div class="ap-calendar">${cal.map(d => `
+                <div class="ap-day ${d.date === todayStr ? 'today' : ''}">
+                    <div>
+                        <div class="ap-day-name">${new Date(d.date).toLocaleDateString('en-GB', { weekday: 'short' })}</div>
+                        <div class="ap-day-theme">${this.esc(d.theme.replace(/_/g, ' '))}</div>
+                    </div>
+                    <div class="ap-day-topic">${this.esc(d.topicType || '')}</div>
+                </div>
+            `).join('')}</div>`;
+        }
+
+        // Audit log
+        const logBody = $('ap-log-body');
+        if (logBody) {
+            const events = (st.recentEvents || []).slice().reverse().slice(0, 80);
+            if (!events.length) {
+                logBody.innerHTML = `<p class="muted">No autonomous actions yet.</p>`;
+            } else {
+                logBody.innerHTML = `<div class="ap-log">${events.map(e => {
+                    const klass = e.type.includes('error') || e.type.includes('unauthorized') || e.type.includes('rejected')
+                        ? 'err'
+                        : e.type.includes('skipped') || e.type.includes('dry') ? 'warn' : 'ok';
+                    const summary = this.summarizeLogEntry(e);
+                    return `<div class="ap-log-entry ${klass}">
+                        <span class="log-ts">${new Date(e.ts).toLocaleString('en-GB')}</span>
+                        <span class="log-type">${this.esc(e.type)}</span>
+                        <span class="log-msg">${this.esc(summary)}</span>
+                    </div>`;
+                }).join('')}</div>`;
+            }
+        }
+    },
+
+    summarizeLogEntry(e) {
+        const p = e.payload || {};
+        if (e.type === 'autopilot.post.published') return (p.summary || '').slice(0, 140);
+        if (e.type === 'autopilot.post.skipped')   return (p.reasons || []).join(', ');
+        if (e.type === 'autopilot.post.rejected')  return 'Draft failed policy checks';
+        if (e.type === 'autopilot.reply.published') return `${p.reviewer || ''}: ${(p.reply || '').slice(0, 140)}`;
+        if (e.type === 'autopilot.reply.rejected') return `${p.reviewer || ''}: all drafts failed policy`;
+        if (e.type === 'autopilot.cycle.started')  return `source=${p.source}`;
+        if (e.type === 'autopilot.cycle.finished') return `post:${p.postReport?.published ? 'yes' : (p.postReport?.reasons || []).join(',') || 'no'} · replies:${(p.replyReport?.candidates || []).filter(c => c.published).length}`;
+        if (e.type === 'autopilot.cron.unauthorized') return `reason=${p.reason}`;
+        return JSON.stringify(p).slice(0, 160);
+    },
+
+    async runAutopilotPreview() {
+        try {
+            this.toast('Generating preview…', 'info');
+            const res = await fetch('/api/agent/autonomousPost', {
+                method: 'POST',
+                headers: { 'x-api-key': this.state.apiKey, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ force: true, dryRun: true }),
             });
             const data = await res.json();
-            if (data.success) {
-                this.toast('Amenity updated successfully.', 'success');
-                this.closeModal();
-                this.fetchAmenities();
-            } else {
-                this.toast(data.message || 'Update failed', 'error');
-            }
-        } catch (err) {
-            this.toast('Connection error.', 'error');
-        } finally {
-            btn.disabled = false;
-            btn.innerHTML = 'Save Changes';
-        }
-    },
-
-    // ── Special Hours ─────────────────────────────────────
-    async fetchSpecialHours() {
-        const list = $('special-hours-list');
-        list.innerHTML = this.loadingCards(4, 80);
-        try {
-            const res = await fetch('/api/gbp/getProfile', { headers: this.apiHeaders() });
-            const data = await res.json();
-            if (data.success) {
-                this.state.profile = data.profile;
-                this.renderSpecialHours();
-            } else {
-                list.innerHTML = this.emptyState('calendar-days', 'No hours found', data.message || '');
-            }
-        } catch (err) {
-            list.innerHTML = this.emptyState('wifi-off', 'Connection error', '');
-        }
-    },
-
-    renderSpecialHours() {
-        const list = $('special-hours-list');
-        const count = $('special-hours-count');
-        const hours = this.state.profile?.specialHours?.specialHourPeriods || [];
-        if (count) count.innerHTML = `<strong>${hours.length}</strong> special period${hours.length !== 1 ? 's' : ''}`;
-
-        if (!hours.length) {
-            list.innerHTML = this.emptyState('calendar-days', 'No special hours', 'Add holiday or seasonal hours to keep patients informed.');
-            return;
-        }
-
-        // Sort by date
-        const sorted = [...hours].sort((a, b) => {
-            const da = new Date(a.startDate.year, a.startDate.month - 1, a.startDate.day);
-            const db = new Date(b.startDate.year, b.startDate.month - 1, b.startDate.day);
-            return da - db;
-        });
-
-        list.innerHTML = sorted.map((p, idx) => {
-            const dateStr = `${p.startDate.day}/${p.startDate.month}/${p.startDate.year}`;
-            const isClosed = p.closed;
-            return `
-            <div class="card special-hour-card">
-                <div class="sh-info">
-                    <div class="sh-date">${dateStr}</div>
-                    <div class="sh-status ${isClosed ? 'sh-closed' : 'sh-open'}">
-                        ${isClosed ? 'Closed' : `${p.openTime.hours}:${p.openTime.minutes || '00'} - ${p.closeTime.hours}:${p.closeTime.minutes || '00'}`}
-                    </div>
+            if (!data.success) throw new Error(data.error || 'preview_failed');
+            const report = data.report || {};
+            const body = (report.payload && report.payload.summary) || '(no draft — policy rejected all attempts)';
+            const reasons = report.reasons || [];
+            $('modal-title').textContent = "Preview of today's post";
+            $('modal-body').innerHTML = `
+                <p class="muted">Theme: <strong>${this.esc(report.theme || '')}</strong> · ${this.esc(report.dayName || '')}</p>
+                <div class="ap-preview-box">${this.esc(body)}</div>
+                ${reasons.length ? `<p class="ap-footnote">Notes: ${this.esc(reasons.join(', '))}</p>` : ''}
+                <p class="ap-footnote">Nothing was published. This was a dry run.</p>
+                <div class="modal-footer" style="padding:20px 0 0 0;">
+                    <button type="button" class="btn btn-primary" onclick="app.closeModal()">Close</button>
                 </div>
-                <button class="btn btn-ghost btn-sm" onclick="app.deleteSpecialHour(${idx})">
-                    <i data-lucide="trash-2" class="text-error"></i>
-                </button>
-            </div>
             `;
-        }).join('');
-        lucide.createIcons(list);
-
-        // Add handler for "Add Special Hour" button if not already added
-        $('add-special-hour-btn').onclick = () => this.openSpecialHourModal();
-    },
-
-    openSpecialHourModal() {
-        $('modal-title').textContent = 'Add Special Hour';
-        $('modal-body').innerHTML = `
-            <div class="form-group">
-                <label class="form-label">Date</label>
-                <input type="date" class="form-control" id="sh-date" required>
-            </div>
-            <div class="form-group" style="margin-top:12px;">
-                <label class="form-label" style="display:flex;align-items:center;gap:8px;">
-                    <input type="checkbox" id="sh-closed"> Business is Closed
-                </label>
-            </div>
-            <div id="sh-times-group">
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;">
-                    <div class="form-group">
-                        <label class="form-label">Open Time</label>
-                        <input type="time" class="form-control" id="sh-open" value="09:00">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Close Time</label>
-                        <input type="time" class="form-control" id="sh-close" value="17:00">
-                    </div>
-                </div>
-            </div>
-            <div class="modal-actions">
-                <button class="btn btn-ghost" onclick="app.closeModal()">Cancel</button>
-                <button class="btn btn-primary" id="save-sh-btn">Add Period</button>
-            </div>
-        `;
-
-        $('sh-closed').addEventListener('change', (e) => {
-            $('sh-times-group').style.display = e.target.checked ? 'none' : 'block';
-        });
-
-        $('save-sh-btn').addEventListener('click', () => this.addSpecialHour());
-        this.openModal();
-    },
-
-    async addSpecialHour() {
-        const dateVal = $('sh-date').value;
-        if (!dateVal) { this.toast('Please select a date.', 'error'); return; }
-
-        const [y, m, d] = dateVal.split('-').map(Number);
-        const closed = $('sh-closed').checked;
-        const openVal = $('sh-open').value;
-        const closeVal = $('sh-close').value;
-
-        const newPeriod = {
-            startDate: { year: y, month: m, day: d },
-            closed: closed
-        };
-
-        if (!closed) {
-            const [oh, om] = openVal.split(':').map(Number);
-            const [ch, cm] = closeVal.split(':').map(Number);
-            newPeriod.openTime = { hours: oh, minutes: om };
-            newPeriod.closeTime = { hours: ch, minutes: cm };
+            this.openModal();
+        } catch (e) {
+            this.toast('Preview failed: ' + e.message, 'error');
         }
-
-        const currentPeriods = this.state.profile?.specialHours?.specialHourPeriods || [];
-        const updatedPeriods = [...currentPeriods, newPeriod];
-
-        this.updateSpecialHours(updatedPeriods);
     },
 
-    async deleteSpecialHour(idx) {
-        if (!confirm('Remove this special hour period?')) return;
-        const currentPeriods = this.state.profile?.specialHours?.specialHourPeriods || [];
-        const updatedPeriods = currentPeriods.filter((_, i) => i !== idx);
-        this.updateSpecialHours(updatedPeriods);
-    },
-
-    async updateSpecialHours(periods) {
-        const btn = $('save-sh-btn');
-        if (btn) {
-            btn.disabled = true;
-            btn.innerHTML = '<span class="spinner"></span> Saving...';
-        }
-
+    async runAutopilotCycle() {
+        if (!confirm('Run the autonomous daily cycle now? This will generate and publish a post (if not already posted today) and reply to any safe unanswered reviews.')) return;
         try {
-            const res = await fetch('/api/gbp/updateProfile', {
-                method: 'PATCH',
-                headers: this.apiHeaders({ 'Content-Type': 'application/json' }),
-                body: JSON.stringify({
-                    updateMask: 'specialHours',
-                    updateData: {
-                        specialHours: { specialHourPeriods: periods }
-                    }
-                })
+            this.toast('Running daily cycle…', 'info');
+            const res = await fetch('/api/agent/runDaily', {
+                method: 'POST',
+                headers: { 'x-api-key': this.state.apiKey, 'Content-Type': 'application/json' },
+                body: JSON.stringify({}),
             });
             const data = await res.json();
-            if (data.success) {
-                this.toast('Special hours updated.', 'success');
-                this.closeModal();
-                this.state.profile = data.profile; // API returns updated location
-                this.renderSpecialHours();
-            } else {
-                this.toast(data.message || 'Update failed', 'error');
+            if (!data.success) throw new Error(data.error || 'cycle_failed');
+            const s = data.summary || {};
+            const posted = s.postReport?.published;
+            const replies = (s.replyReport?.candidates || []).filter(c => c.published).length;
+            this.toast(`Done — post ${posted ? 'published' : 'skipped'}, ${replies} reply(ies) sent.`, 'success');
+            // Render flagged reviews card
+            const flagged = s.replyReport?.flaggedForHuman || [];
+            const fbody = $('ap-flagged-body');
+            if (fbody) {
+                if (!flagged.length) {
+                    fbody.innerHTML = `<p class="muted">No reviews need human attention right now.</p>`;
+                } else {
+                    fbody.innerHTML = `<div class="ap-flagged-list">${flagged.map(f => `
+                        <div class="ap-flagged-row">
+                            <span class="stars">${this.esc(f.starRating || '?')}</span>
+                            <div>
+                                <div><strong>${this.esc(f.reviewer || 'Anonymous')}</strong> · ${f.createTime ? fmt(f.createTime) : ''}</div>
+                                <div class="reasons">${this.esc((f.reasons || []).join(', '))}</div>
+                            </div>
+                            <button class="btn btn-ghost btn-sm" onclick="app.switchView('reviews')">Review</button>
+                        </div>
+                    `).join('')}</div>`;
+                }
+                lucide.createIcons();
             }
-        } catch (err) {
-            this.toast('Connection error.', 'error');
-        } finally {
-            if (btn) {
-                btn.disabled = false;
-                btn.innerHTML = 'Add Period';
-            }
-        }
-    },
-
-    // ── Service Areas ─────────────────────────────────────
-    async fetchServiceAreas() {
-        const list = $('service-areas-list');
-        list.innerHTML = this.loadingCards(4, 60);
-        try {
-            const res = await fetch('/api/gbp/getProfile', { headers: this.apiHeaders() });
-            const data = await res.json();
-            if (data.success) {
-                this.state.profile = data.profile;
-                this.renderServiceAreas();
-            } else {
-                list.innerHTML = this.emptyState('map', 'No areas found', data.message || '');
-            }
-        } catch (err) {
-            list.innerHTML = this.emptyState('wifi-off', 'Connection error', '');
-        }
-    },
-
-    renderServiceAreas() {
-        const list = $('service-areas-list');
-        const count = $('service-areas-count');
-        const areas = this.state.profile?.serviceArea?.places?.placeInfos || [];
-        if (count) count.innerHTML = `<strong>${areas.length}</strong> area${areas.length !== 1 ? 's' : ''}`;
-
-        if (!areas.length) {
-            list.innerHTML = this.emptyState('map', 'No service areas', 'Define areas where you provide on-site services.');
-            return;
-        }
-
-        list.innerHTML = areas.map((a, idx) => `
-            <div class="card service-area-card">
-                <div class="sa-info">
-                    <i data-lucide="map-pin" class="sa-icon"></i>
-                    <span class="sa-name">${this.esc(a.name)}</span>
-                </div>
-                <button class="btn btn-ghost btn-sm" onclick="app.deleteServiceArea(${idx})">
-                    <i data-lucide="trash-2" class="text-error"></i>
-                </button>
-            </div>
-        `).join('');
-        lucide.createIcons(list);
-
-        $('add-service-area-btn').onclick = () => this.openAddServiceAreaModal();
-    },
-
-    openAddServiceAreaModal() {
-        $('modal-title').textContent = 'Add Service Area';
-        $('modal-body').innerHTML = `
-            <div class="form-group">
-                <label class="form-label">Place Name (e.g. Entebbe, Uganda)</label>
-                <input type="text" class="form-control" id="sa-name" placeholder="Search for a city or region..." required>
-                <p class="form-help">Note: You must provide a valid place name recognized by Google.</p>
-            </div>
-            <div class="modal-actions">
-                <button class="btn btn-ghost" onclick="app.closeModal()">Cancel</button>
-                <button class="btn btn-primary" id="save-sa-btn">Add Area</button>
-            </div>
-        `;
-
-        $('save-sa-btn').addEventListener('click', () => this.addServiceArea());
-        this.openModal();
-    },
-
-    async addServiceArea() {
-        const name = $('sa-name').value.trim();
-        if (!name) { this.toast('Please enter a place name.', 'error'); return; }
-
-        const currentAreas = this.state.profile?.serviceArea?.places?.placeInfos || [];
-        // Note: In a real app, you'd use Google Places Autocomplete to get a placeId.
-        // For the MVP, we assume the user provides a string that Google can match,
-        // although the API strictly prefers placeId.
-        const updatedAreas = [...currentAreas, { name: name }];
-
-        this.updateServiceAreas(updatedAreas);
-    },
-
-    async deleteServiceArea(idx) {
-        if (!confirm('Remove this service area?')) return;
-        const currentAreas = this.state.profile?.serviceArea?.places?.placeInfos || [];
-        const updatedAreas = currentAreas.filter((_, i) => i !== idx);
-        this.updateServiceAreas(updatedAreas);
-    },
-
-    async updateServiceAreas(areas) {
-        const btn = $('save-sa-btn');
-        if (btn) {
-            btn.disabled = true;
-            btn.innerHTML = '<span class="spinner"></span> Saving...';
-        }
-
-        try {
-            const res = await fetch('/api/gbp/updateProfile', {
-                method: 'PATCH',
-                headers: this.apiHeaders({ 'Content-Type': 'application/json' }),
-                body: JSON.stringify({
-                    updateMask: 'serviceArea',
-                    updateData: {
-                        serviceArea: {
-                            businessType: 'CUSTOMER_LOCATION_ONLY',
-                            places: { placeInfos: areas }
-                        }
-                    }
-                })
-            });
-            const data = await res.json();
-            if (data.success) {
-                this.toast('Service areas updated.', 'success');
-                this.closeModal();
-                this.state.profile = data.profile;
-                this.renderServiceAreas();
-            } else {
-                this.toast(data.message || 'Update failed', 'error');
-            }
-        } catch (err) {
-            this.toast('Connection error.', 'error');
-        } finally {
-            if (btn) {
-                btn.disabled = false;
-                btn.innerHTML = 'Add Area';
-            }
+            this.fetchAutopilot();
+        } catch (e) {
+            this.toast('Cycle failed: ' + e.message, 'error');
         }
     },
 };

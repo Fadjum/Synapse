@@ -19,26 +19,7 @@
 
 ## Environment Variables (required in .env)
 ```
-PORT=3000
-GBP_ACCOUNT_ID=accounts/100732770582624120872
-GBP_LOCATION_ID=locations/9277209819091563497
-
-# --- API Key (REQUIRED — protects all /api/* routes from public access) ---
-# Generate with: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-# Send as header in every request: x-api-key: <your-key>
-API_KEY=your-long-random-secret-here
-
-# --- Auth Option A: Service Account (PREFERRED — does not expire) ---
-# Paste the entire contents of the service account JSON key file as a single line:
-GOOGLE_SERVICE_ACCOUNT_KEY_JSON={"type":"service_account","project_id":"REDACTED","private_key_id":"REDACTED","private_key":"REDACTED","client_email":"REDACTED","client_id":"REDACTED","auth_uri":"https://accounts.google.com/o/oauth2/auth","token_uri":"https://oauth2.googleapis.com/token"}
-# OR point to the key file on disk:
-# GOOGLE_SERVICE_ACCOUNT_KEY_FILE=/path/to/service-account-key.json
-
-# --- Auth Option B: OAuth2 Refresh Token (FALLBACK — expires if unused 6+ months) ---
-GOOGLE_CLIENT_ID=REDACTED.apps.googleusercontent.com
-GOOGLE_CLIENT_SECRET=REDACTED
-GOOGLE_REDIRECT_URI=http://localhost:3000/api/auth/callback
-GOOGLE_REFRESH_TOKEN=REDACTED
+# [REDACTED] - See Vercel environment variables for actual values.
 ```
 - `GBP_ACCOUNT_ID` and `GBP_LOCATION_ID` can be provided with or without `accounts/` or `locations/` prefixes.
 - If both `GOOGLE_SERVICE_ACCOUNT_KEY_JSON` and the OAuth vars are present, **service account takes priority**.
@@ -121,6 +102,74 @@ server.js              — Express app, all routes registered here
 | GET | `/api/gbp/listMedia` | List media items |
 | POST | `/api/gbp/uploadMedia` | Upload media via sourceUrl |
 | GET | `/api/gbp/getInsights` | Get performance metrics |
+| POST | `/api/agent/chat` | AI conversational agent (Gemini, 14 tools) |
+| GET | `/api/agent/status` | Autopilot status + today's theme + 7-day content calendar |
+| GET | `/api/agent/auditLog` | Recent autonomous actions (ring buffer, ~500 entries) |
+| POST | `/api/agent/autonomousPost` | Generate + publish today's post (idempotent; `{force, dryRun}`) |
+| POST | `/api/agent/autoReplyReviews` | Draft + publish safe 4★/5★ review replies (`{maxReplies, dryRun}`) |
+| POST | `/api/agent/runDaily` | Run the full daily cycle (post + replies) immediately |
+| GET | `/api/cron/daily` | **Vercel Cron entry point** — authenticated via `CRON_SECRET` bearer, NOT `x-api-key` |
+
+---
+
+## Autopilot — Autonomous GBP Agent
+
+Synapse now runs autonomously. A Vercel Cron job hits `/api/cron/daily` once
+per day (06:00 UTC = 09:00 Entebbe) and the orchestrator at
+`utils/autonomousAgent.js`:
+
+1. **Posts once per day** — picks the theme for today from the rotating
+   weekly schedule in `utils/contentStrategy.js`, asks Gemini to write the
+   body, runs the draft through `utils/policyGuard.js`, and only then
+   publishes via the GBP API.
+2. **Replies to safe reviews** — fetches reviews, keeps only unanswered 4★/5★
+   reviews that don't mention lawsuits/medical emergencies/infections, asks
+   Gemini to draft a short thank-you reply, validates, publishes. Anything
+   risky (≤3★, already replied, red-flag keywords) is put on a **flagged for
+   human** list, never auto-answered.
+3. **Audits everything** — every action (published, skipped, rejected,
+   unauthorized cron hit) goes into `utils/auditLog.js` and surfaces in the
+   Autopilot UI panel.
+
+### Policy safeguards (enforced by `utils/policyGuard.js`)
+- No medical claims: blocks "cure", "guarantee", "miracle", "diagnose",
+  "prescription", "dosage", "#1", "best ent", "100%", etc.
+- Length caps: post ≤ 1400 chars, reply ≤ 4000 chars (GBP limits 1500 / 4096).
+- No foreign URLs (only the clinic's own website is allowed).
+- No emails, no phone numbers, no hashtags, no emojis.
+- No quoting the reviewer's text back at them (privacy).
+- Auto-reply ONLY for 4★/5★ reviews; ≤3★ always routed to human.
+- Fails closed: if all 3 generation attempts fail validation, nothing is
+  published and the rejection is logged.
+
+### Idempotency
+`alreadyPostedToday()` queries GBP itself and skips if any post was created
+today (UTC). This protects against double-posts from overlapping cron runs
+or manual triggers.
+
+### Feature flags (Vercel env vars)
+| Var | Default | Effect |
+|---|---|---|
+| `AUTOPILOT_ENABLED` | `true` | Master kill switch |
+| `AUTOPILOT_DAILY_POST` | `true` | Enable the daily post job |
+| `AUTOPILOT_AUTO_REPLY` | `true` | Enable auto-reply to reviews |
+| `AUTOPILOT_POST_DRY_RUN` | `false` | Generate posts but do NOT publish |
+| `AUTOPILOT_REPLY_DRY_RUN` | `false` | Generate replies but do NOT publish |
+| `CRON_SECRET` | _unset_ | **Required** — Vercel Cron bearer token. Cron route fails closed if unset. |
+
+### Operator controls
+- **Autopilot UI tab** in the frontend shows status, today's theme, 7-day
+  calendar, recent audit-log entries, and reviews flagged for human
+  attention. Has "Preview today's post" (dry-run) and "Run daily cycle now"
+  buttons.
+- Manual endpoints: `POST /api/agent/autonomousPost`, `/autoReplyReviews`,
+  `/runDaily` — all protected by `x-api-key`.
+- Generating a new `CRON_SECRET`:
+  ```bash
+  node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+  ```
+  Set it in Vercel env vars. Vercel Cron will automatically send it as
+  `Authorization: Bearer <secret>`.
 
 ---
 
@@ -174,15 +223,15 @@ curl -s https://www.trendexhub.com/api/gbp/getProfile \
 
 ---
 
-## Last Session Snapshot (auto-updated: 2026-04-12 19:29 UTC)
+## Last Session Snapshot (auto-updated: 2026-04-17 23:25 UTC)
 - **Branch:** `main`
 - **Last 5 commits:**
 ```
-6bb98e9 chore: auto-update CLAUDE.md session snapshot [2026-04-12 19:20 UTC]
-cc0e6fa chore: auto-update CLAUDE.md session snapshot [2026-04-12 19:20 UTC]
-b7bb3fe chore: auto-update CLAUDE.md session snapshot [2026-04-12 19:15 UTC]
-03326c9 chore: auto-update CLAUDE.md session snapshot [2026-04-12 19:15 UTC]
-97cdf4a chore: auto-update CLAUDE.md session snapshot [2026-04-12 19:09 UTC]
+10545a0 fix: add server-side 50s timeout so Vercel always sends a JSON response
+79e426c chore: auto-update CLAUDE.md session snapshot [2026-04-17 23:09 UTC]
+ab02235 fix: prevent silent empty replies and runaway tool loops in agent chat
+ebfee79 chore: auto-update CLAUDE.md session snapshot [2026-04-17 23:02 UTC]
+822c29d fix: raise chat fetch timeout to 55s and show clear timeout message
 ```
 - **Billing:** Activated and linked to project `468613454814` ✅
 - **APIs enabled:** My Business Reviews, Business Information, Account Management ✅

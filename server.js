@@ -18,13 +18,19 @@ const handleReplyToQuestion = require('./api/gbp/replyToQuestion');
 const handleListMedia = require('./api/gbp/listMedia');
 const handleUploadMedia = require('./api/gbp/uploadMedia');
 const handleDeleteMedia = require('./api/gbp/deleteMedia');
-const handleGetAttributes = require('./api/gbp/getAttributes');
-const handleUpdateAttributes = require('./api/gbp/updateAttributes');
-const handleGetVerificationStatus = require('./api/gbp/getVerificationStatus');
 const handleGetServiceList = require('./api/gbp/getServiceList');
 const handleUpdateServiceList = require('./api/gbp/updateServiceList');
 const handleDeletePost = require('./api/gbp/deletePost');
+const handleGetLocations = require('./api/gbp/getLocations');
+const handleAgentChat = require('./api/agent/chat');
+const handleAutonomousPost = require('./api/agent/autonomousPost');
+const handleAutoReplyReviews = require('./api/agent/autoReplyReviews');
+const handleRunDaily = require('./api/agent/runDaily');
+const handleAgentStatus = require('./api/agent/status');
+const handleAuditLog = require('./api/agent/auditLog');
+const handleCronDaily = require('./api/cron/daily');
 const app = express();
+// Dummy comment to trigger deployment
 const port = 3000;
 
 app.use(express.json());
@@ -84,9 +90,6 @@ app.post('/api/gbp/createPost', requireApiKey, handleCreatePost);
 app.post('/api/gbp/deletePost', requireApiKey, handleDeletePost);
 app.get('/api/gbp/getProfile', requireApiKey, handleGetProfile);
 app.patch('/api/gbp/updateProfile', requireApiKey, handleUpdateProfile);
-app.get('/api/gbp/getAttributes', requireApiKey, handleGetAttributes);
-app.patch('/api/gbp/updateAttributes', requireApiKey, handleUpdateAttributes);
-app.get('/api/gbp/getVerificationStatus', requireApiKey, handleGetVerificationStatus);
 app.get('/api/gbp/getInsights', requireApiKey, handleGetInsights);
 app.get('/api/gbp/fetchQuestions', requireApiKey, handleFetchQuestions);
 app.post('/api/gbp/replyToQuestion', requireApiKey, handleReplyToQuestion);
@@ -96,17 +99,21 @@ app.delete('/api/gbp/deleteMedia', requireApiKey, handleDeleteMedia);
 app.get('/api/gbp/getServiceList', requireApiKey, handleGetServiceList);
 app.patch('/api/gbp/updateServiceList', requireApiKey, handleUpdateServiceList);
 
-app.get('/api/gbp/debug/locations', requireApiKey, async (req, res) => {
-  try {
-    const data = await gbpClient.getLocations();
-    if (data.error) {
-        return res.status(500).json(data);
-    }
-    res.json({ success: true, data });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
+app.get('/api/gbp/debug/locations', requireApiKey, handleGetLocations);
+
+// AI Agent
+app.post('/api/agent/chat', requireApiKey, handleAgentChat);
+
+// --- Autonomous agent (Autopilot) ---
+app.get('/api/agent/status', requireApiKey, handleAgentStatus);
+app.get('/api/agent/auditLog', requireApiKey, handleAuditLog);
+app.post('/api/agent/autonomousPost', requireApiKey, handleAutonomousPost);
+app.post('/api/agent/autoReplyReviews', requireApiKey, handleAutoReplyReviews);
+app.post('/api/agent/runDaily', requireApiKey, handleRunDaily);
+
+// Vercel Cron entry point — authenticated via CRON_SECRET bearer token,
+// NOT via x-api-key (Vercel Cron can't attach custom headers).
+app.get('/api/cron/daily', handleCronDaily);
 
 app.listen(port, () => {
   console.log(`Server listening at http://localhost:${port}`);
